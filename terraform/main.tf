@@ -51,6 +51,10 @@ resource "aws_instance" "medusa_instance" {
   security_groups = [
     aws_security_group.ec2_sg.name
   ]
+root_block_device {
+    volume_size = 15  # Size in GB
+    volume_type = "gp2"  # General Purpose SSD
+  }
   tags = {
     Name = "Medusa Backend"
   }
