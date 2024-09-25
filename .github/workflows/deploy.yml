@@ -162,17 +162,20 @@ jobs:
             # Build the Docker image
             sudo docker build -t medusa_app:latest .
 
-            # Install AWS CLI to push to ECR
-            sudo apt-get install -y awscli
+            # Install AWS CLI if it's not installed
+            if ! command -v aws &> /dev/null; then
+              echo "AWS CLI not found. Installing..."
+              sudo apt-get install -y awscli
+            fi
 
             # Login to ECR
-            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY_URI }}
+            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin 440744245577.dkr.ecr.ap-south-1.amazonaws.com
 
             # Tag the Docker image
-            sudo docker tag medusa_app:latest ${{ secrets.ECR_REPOSITORY_URI }}:latest
+            sudo docker tag medusa_app:latest 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
 
             # Push the Docker image to ECR
-            sudo docker push ${{ secrets.ECR_REPOSITORY_URI }}:latest
+            sudo docker push 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
 
             echo "Medusa Docker image built and pushed to ECR."
           EOF
