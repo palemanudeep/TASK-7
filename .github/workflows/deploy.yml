@@ -157,7 +157,7 @@ jobs:
 
             # Command to run Medusa when the container starts
             CMD ["medusa", "start"]
-            EOF2
+          EOF2
 
             # Build the Docker image
             sudo docker build -t medusa_app:latest .
