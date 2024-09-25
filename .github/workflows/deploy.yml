@@ -25,7 +25,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1  # Adjust region as needed
+          aws-region: ap-south-1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
@@ -70,50 +70,35 @@ jobs:
         if: github.event.inputs.action == 'apply'
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=60 ubuntu@${{ env.EC2_HOST }} << 'EOF'
-            # Update and install necessary packages
+            # Update system packages
             sudo apt-get update -y
             sudo apt-get upgrade -y
-            # Install Docker
-            sudo apt-get install -y docker.io
-            sudo systemctl start docker
-            sudo systemctl enable docker
 
-
-            # Install AWS
-            sudo apt-get install -y awscli
-            
-            # Install Node.js 18.x
+            # Install Docker, Node.js, PostgreSQL, Redis, AWS CLI
+            sudo apt-get install -y docker.io awscli postgresql postgresql-contrib redis-server
+            sudo apt-get install -y curl
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
             sudo apt install -y nodejs
-            
-            # Install PostgreSQL
-            sudo apt install -y postgresql postgresql-contrib
+
+            # Enable and start PostgreSQL and Redis
             sudo systemctl start postgresql
             sudo systemctl enable postgresql
+            sudo systemctl start redis-server
+            sudo systemctl enable redis-server
 
             # Create PostgreSQL database and user
             sudo -u postgres psql -c "CREATE USER medusabackend WITH PASSWORD 'medusa123' CREATEDB;"
             sudo -u postgres psql -c "CREATE DATABASE medusabackend OWNER medusabackend;"
             sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE medusabackend TO medusabackend;"
 
-            # Install Redis
-            sudo apt install -y redis-server
-            sudo systemctl enable redis-server
-            sudo systemctl start redis-server
-
             # Clone the Medusa app repository
             if [ -d "./my-app-store" ]; then
-              echo "Directory ./my-app-store exists. Deleting it..."
               sudo rm -rf ./my-app-store
             fi
-
-            echo "Cloning the repository..."
             git clone https://github.com/palemanudeep/TASK-1.git ./my-app-store
-
             cd ./my-app-store
 
-            # Set up .env file
-            touch .env
+            # Set up .env file for Medusa
             echo "DATABASE_URL=postgres://medusabackend:medusa123@localhost:5432/medusabackend" > .env
             echo "REDIS_URL=redis://localhost:6379" >> .env
 
@@ -130,54 +115,34 @@ jobs:
             
             # Kill any process running on port 9000
             if lsof -i :9000; then
-              echo "Killing process running on port 9000..."
               lsof -ti:9000 | xargs kill -9
             fi
 
-            # Start the Medusa application in the background
+            # Start Medusa application in the background
             nohup sudo npm run start &> medusa.log &
 
             echo "Medusa deployment initiated."
 
-            # Create Dockerfile
+            # Create Dockerfile for Medusa
             cat << 'EOF2' > Dockerfile
             FROM node:hydrogen-alpine3.20
-
-            # Set the working directory inside the container
             WORKDIR /app
-
-            # Copy package.json and package-lock.json to leverage Docker's caching
             COPY package.json ./ 
-
-            # Install dependencies and Medusa CLI globally
             RUN npm install && npm install -g @medusajs/medusa-cli@latest
             RUN npm install --legacy-peer-deps || npm install --force
-
-            # Copy the rest of the application code
             COPY . .
-
-            # Expose the ports the application will run on
-            EXPOSE 7001
-            EXPOSE 9000
-
-            # Command to run Medusa when the container starts
+            EXPOSE 7001 9000
             CMD ["medusa", "start"]
-          EOF2
+            EOF2
 
             # Build the Docker image
             sudo docker build -t medusa_app:latest .
 
-            # Install AWS CLI to push to ECR
-            sudo apt-get install -y python3-pip
-            sudo pip3 install awscli
-
             # Login to ECR
             aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr
 
-            # Tag the Docker image
+            # Tag and push the Docker image to ECR
             sudo docker tag medusa_app:latest 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
-
-            # Push the Docker image to ECR
             sudo docker push 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
 
             echo "Medusa Docker image built and pushed to ECR."
