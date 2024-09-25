@@ -42,9 +42,6 @@ jobs:
             sudo systemctl start docker
             sudo systemctl enable docker
             
-            # Install Docker
-            sudo apt-get install -y docker.io
-            
             # Install Node.js 18.x
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
             sudo apt install -y nodejs
@@ -133,13 +130,13 @@ jobs:
             sudo apt-get install -y awscli
 
             # Login to ECR
-            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin 440744245577.dkr.ecr.ap-south-1.amazonaws.com
+            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
 
             # Tag the Docker image
-            sudo docker tag medusa_app:latest 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
+            sudo docker tag medusa_app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
 
             # Push the Docker image to ECR
-            sudo docker push 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
+            sudo docker push ${{ env.ECR_REPOSITORY_URL }}:latest
 
             echo "Medusa Docker image built and pushed to ECR."
           EOF
