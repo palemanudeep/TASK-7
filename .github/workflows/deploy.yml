@@ -1,39 +1,75 @@
-name: Deploy Medusa to EC2 and Push Docker Image to ECR
+name: Deploy or Destroy Medusa
 
 on:
-  workflow_dispatch:  # Trigger manually from GitHub Actions
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Select the action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
 
 jobs:
-  deploy:
+  terraform:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v1
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1 # Permanent AWS region
+          aws-region: ap-south-1  # Adjust region as needed
 
-      - name: Create EC2 Instance and ECR Repository
-        run: |
-          terraform init
-          terraform apply -auto-approve
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.5.0
+          terraform_wrapper: false
 
-      - name: Get EC2 Public IP and ECR URL
-        id: ec2_info
-        run: |
-          echo "EC2_PUBLIC_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
-          echo "ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)" >> $GITHUB_ENV
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: Terraform Plan
+        id: terraform-plan
+        run: terraform plan -out=tfplan
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: | 
+          terraform apply -auto-approve tfplan
+          echo "EC2_HOST=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
+          echo ${{ env.EC2_HOST }}
+        working-directory: ./terraform
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
       - name: Update and Install Dependencies
+        if: github.event.inputs.action == 'apply'
         run: |
-          echo "${{ secrets.EC2_PRIVATE_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-          ssh -i private_key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=60 ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=60 ubuntu@${{ env.EC2_HOST }} << 'EOF'
             # Update and install necessary packages
             sudo apt-get update -y
             sudo apt-get upgrade -y
@@ -130,13 +166,14 @@ jobs:
             sudo apt-get install -y awscli
 
             # Login to ECR
-            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
+            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY_URI }}
 
             # Tag the Docker image
-            sudo docker tag medusa_app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
+            sudo docker tag medusa_app:latest ${{ secrets.ECR_REPOSITORY_URI }}:latest
 
             # Push the Docker image to ECR
-            sudo docker push ${{ env.ECR_REPOSITORY_URL }}:latest
+            sudo docker push ${{ secrets.ECR_REPOSITORY_URI }}:latest
+
 
             echo "Medusa Docker image built and pushed to ECR."
           EOF
