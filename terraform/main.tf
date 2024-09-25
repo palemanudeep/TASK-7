@@ -1,59 +1,74 @@
-provider "aws" {
-  region = "ap-south-1"  # Permanent AWS region
-}
-
 resource "aws_vpc" "medusa_vpc" {
   cidr_block = "10.0.0.0/16"
+
+  tags = {
+    Name = "medusa-vpc"
+  }
 }
 
 resource "aws_subnet" "medusa_subnet" {
   vpc_id            = aws_vpc.medusa_vpc.id
   cidr_block        = "10.0.1.0/24"
   availability_zone = "ap-south-1a"
+
+  tags = {
+    Name = "medusa-subnet"
+  }
 }
 
 resource "aws_security_group" "medusa_sg" {
-  name        = "medusa_security_group"
-  description = "Allow inbound traffic for Medusa application"
-  vpc_id      = aws_vpc.medusa_vpc.id
+  vpc_id = aws_vpc.medusa_vpc.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # Allow SSH from anywhere
+  }
 
   ingress {
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]  # Allow access to Medusa
   }
 
   ingress {
     from_port   = 7001
     to_port     = 7001
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]  # Allow access to Medusa
   }
 
   egress {
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    protocol    = "-1"  # Allow all outbound traffic
+  }
+
+  tags = {
+    Name = "medusa-sg"
   }
 }
 
 resource "aws_instance" "medusa_instance" {
-  ami           = "ami-0000791bad666add5"  # Ubuntu AMI ID
-  instance_type = "t2.large"  # Large instance with 15 GB of memory
+  ami           = var.ami
+  instance_type = var.instance_type
+  key_name      = var.key_name
   subnet_id     = aws_subnet.medusa_subnet.id
-  key_name      = "new"  # Key pair name (without .pem)
 
-  vpc_security_group_ids = [aws_security_group.medusa_sg.id]
+  root_block_device {
+    volume_size = var.instance_storage  # 16 GB
+    volume_type = "gp2"  # General Purpose SSD
+  }
 
   tags = {
-    Name = "MedusaInstance"
+    Name = "medusa-instance"
   }
 }
 
-resource "aws_ecr_repository" "medusa_repository" {
-  name = "medusa-ecr"
+resource "aws_ecr_repository" "medusa_ecr" {
+  name = var.ecr_repository_name
 }
 
 output "ec2_public_ip" {
@@ -61,5 +76,5 @@ output "ec2_public_ip" {
 }
 
 output "ecr_repository_url" {
-  value = aws_ecr_repository.medusa_repository.repository_url
+  value = aws_ecr_repository.medusa_ecr.repository_url
 }
