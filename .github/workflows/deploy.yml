@@ -147,6 +147,7 @@ jobs:
 
             # Install dependencies and Medusa CLI globally
             RUN npm install && npm install -g @medusajs/medusa-cli@latest
+            RUN npm install --legacy-peer-deps || npm install --force
 
             # Copy the rest of the application code
             COPY . .
@@ -162,14 +163,12 @@ jobs:
             # Build the Docker image
             sudo docker build -t medusa_app:latest .
 
-            # Install AWS CLI if it's not installed
-            if ! command -v aws &> /dev/null; then
-              echo "AWS CLI not found. Installing..."
-              sudo apt-get install -y awscli
-            fi
+            # Install AWS CLI to push to ECR
+            sudo apt-get install -y python3-pip
+            sudo pip3 install awscli
 
             # Login to ECR
-            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin 440744245577.dkr.ecr.ap-south-1.amazonaws.com
+            aws ecr get-login-password --region ap-south-1 | sudo docker login --username AWS --password-stdin 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr
 
             # Tag the Docker image
             sudo docker tag medusa_app:latest 440744245577.dkr.ecr.ap-south-1.amazonaws.com/medusa-ecr:latest
