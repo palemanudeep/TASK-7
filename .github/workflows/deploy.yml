@@ -77,6 +77,10 @@ jobs:
             sudo apt-get install -y docker.io
             sudo systemctl start docker
             sudo systemctl enable docker
+
+
+            # Install AWS
+            sudo apt-get install -y awscli
             
             # Install Node.js 18.x
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
